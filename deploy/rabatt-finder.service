@@ -1,0 +1,13 @@
+[Unit]
+Description=Rabatt-Finder: Angebote auslesen und Website aktualisieren
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=rabatt
+Group=rabatt
+WorkingDirectory=/opt/rabatt-finder
+ExecStart=/opt/rabatt-finder/deploy/update.sh
+TimeoutStartSec=90min
+Nice=10

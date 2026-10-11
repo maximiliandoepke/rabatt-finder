@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Rabatt-Finder</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <div class="brand">
+        <h1>Rabatt-Finder</h1>
+        <p class="meta" id="meta">Lade Angebote …</p>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="suche" aria-selected="true">Suche</button>
+        <button role="tab" data-tab="uebersicht">Übersicht</button>
+        <button role="tab" data-tab="top">Top-Angebote</button>
+        <button role="tab" data-tab="vergleich">Anbieter-Vergleich</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <p id="status" class="status" role="status" hidden></p>
+    <!-- Suche -->
+    <section id="tab-suche" class="tab">
+      <div class="filters">
+        <label class="search">
+          <span class="sr">Suchbegriffe</span>
+          <input id="q" type="search" placeholder="Suchen, z. B. „fernseher“ oder „hotel wellness“" autocomplete="off">
+        </label>
+        <select id="kat" aria-label="Kategorie"><option value="">Alle Kategorien</option></select>
+        <select id="plat" aria-label="Plattform"><option value="">Alle Plattformen</option></select>
+        <select id="kanal" aria-label="Kanal">
+          <option value="">Online &amp; vor Ort</option>
+          <option value="online">Online</option>
+          <option value="vor Ort">Vor Ort</option>
+        </select>
+        <select id="sort" aria-label="Sortierung">
+          <option value="rabatt">Höchster Rabatt</option>
+          <option value="name">Anbieter A–Z</option>
+          <option value="neu">Neueste zuerst</option>
+        </select>
+        <label class="check" id="neu-wrap" hidden><input type="checkbox" id="nurneu"> nur neue</label>
+        <button id="reset" class="link">Zurücksetzen</button>
+      </div>
+
+      <div class="summary" id="summary"></div>
+      <ol class="results" id="results"></ol>
+      <button id="more" class="more" hidden>Mehr anzeigen</button>
+    </section>
+
+    <!-- Übersicht -->
+    <section id="tab-uebersicht" class="tab" hidden>
+      <p class="hint">Anzahl Angebote und bester Rabatt je Plattform. Grün = höchster Rabatt in der Kategorie. Auf eine Kategorie klicken, um ihre Angebote zu sehen.</p>
+      <div class="table-wrap"><table id="ov"></table></div>
+    </section>
+
+    <!-- Top -->
+    <section id="tab-top" class="tab" hidden>
+      <p class="hint">Die 5 höchsten Rabatte je Kategorie (pro Anbieter nur das beste Angebot). „Bis zu“-Rabatte gelten oft nur für einzelne Artikel.</p>
+      <div id="top" class="top-grid"></div>
+    </section>
+
+    <!-- Vergleich -->
+    <section id="tab-vergleich" class="tab" hidden>
+      <div class="filters">
+        <label class="search">
+          <span class="sr">Anbieter filtern</span>
+          <input id="vq" type="search" placeholder="Anbieter filtern, z. B. „adidas“" autocomplete="off">
+        </label>
+      </div>
+      <p class="hint" id="vhint"></p>
+      <div class="table-wrap"><table id="cmp"></table></div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <span id="foot"></span>
+    <a href="Angebote_Uebersicht.xlsx" download>Excel herunterladen</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

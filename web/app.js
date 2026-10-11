@@ -1,0 +1,293 @@
+"use strict";
+
+const PAGE = 50;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const norm = (s) => String(s ?? "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss");
+const pctText = (r) => (r == null ? "" : r + " %");
+
+let DATA = null;
+let OFFERS = [];
+let PLAT = [];
+let shown = PAGE;
+
+const state = { tab: "suche", q: "", kat: "", plat: "", kanal: "", sort: "rabatt", neu: false };
+
+// ---------- Laden ----------
+fetch("offers.json", { cache: "no-cache" })
+  .then((r) => {
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  })
+  .then(init)
+  .catch(() => {
+    $("meta").textContent = "Die Angebote konnten nicht geladen werden.";
+  });
+
+function init(data) {
+  DATA = data;
+  PLAT = data.plattformen;
+  OFFERS = data.offers.map((o) => ({ ...o, hay: norm([o.a, o.o, o.k, o.u, o.d, o.h, o.s].join(" ")) }));
+
+  const total = OFFERS.length.toLocaleString("de-DE");
+  const parts = PLAT.map((p, i) => `${p} ${data.anzahl[i].toLocaleString("de-DE")}`).join(" · ");
+  $("meta").textContent = `Stand ${data.stand} · ${total} Angebote · ${parts}` + (data.neu ? ` · ${data.neu} neu` : "");
+  $("foot").textContent = data.entfallen.length ? `${data.entfallen.length} Angebote seit dem letzten Update entfallen.` : "";
+  $("neu-wrap").hidden = !data.neu;
+
+  const kats = [...new Set(OFFERS.map((o) => o.k))].sort((a, b) => a.localeCompare(b, "de"));
+  $("kat").insertAdjacentHTML("beforeend", kats.map((k) => `<option>${esc(k)}</option>`).join(""));
+  $("plat").insertAdjacentHTML("beforeend", PLAT.map((p, i) => `<option value="${i}">${esc(p)}</option>`).join(""));
+
+  readHash();
+  bind();
+  renderAll();
+  showStatus();
+}
+
+// Hinweis, falls das letzte automatische Update nicht vollständig war
+function showStatus() {
+  fetch("status.json", { cache: "no-cache" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((s) => {
+      if (!s || !s.warnungen || !s.warnungen.length) return;
+      const names = { cb: "Corporate Benefits", sb: "Student Beans", ud: "UNiDAYS" };
+      const failed = Object.entries(s.plattformen || {}).filter(([, v]) => !v.ok).map(([k]) => names[k] || k);
+      $("status").textContent = `Hinweis: Beim letzten Update (${s.lauf.replace("T", " ")}) konnte ${failed.join(", ") || "eine Plattform"} nicht aktualisiert werden – dort werden die Angebote vom vorherigen Stand angezeigt.`;
+      $("status").hidden = false;
+    })
+    .catch(() => {});
+}
+
+// ---------- Zustand <-> URL ----------
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  for (const k of Object.keys(state)) if (h.has(k)) state[k] = k === "neu" ? h.get(k) === "1" : h.get(k);
+  syncInputs();
+}
+
+function syncInputs() {
+  $("q").value = state.q;
+  $("kat").value = state.kat;
+  $("plat").value = state.plat;
+  $("kanal").value = state.kanal;
+  $("sort").value = state.sort;
+  $("nurneu").checked = state.neu;
+}
+
+function writeHash() {
+  const h = new URLSearchParams();
+  for (const [k, v] of Object.entries(state)) {
+    if (k === "tab" ? v !== "suche" : k === "sort" ? v !== "rabatt" : v) h.set(k, v === true ? "1" : v);
+  }
+  history.replaceState(null, "", h.toString() ? "#" + h : location.pathname);
+}
+
+function bind() {
+  document.querySelectorAll(".tabs button").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.tab = b.dataset.tab;
+      writeHash();
+      renderTabs();
+    })
+  );
+  let t;
+  $("q").addEventListener("input", () => {
+    clearTimeout(t);
+    t = setTimeout(() => update("q", $("q").value), 150);
+  });
+  for (const id of ["kat", "plat", "kanal", "sort"]) $(id).addEventListener("change", () => update(id, $(id).value));
+  $("nurneu").addEventListener("change", () => update("neu", $("nurneu").checked));
+  $("reset").addEventListener("click", () => {
+    Object.assign(state, { q: "", kat: "", plat: "", kanal: "", sort: "rabatt", neu: false });
+    syncInputs();
+    update();
+  });
+  $("more").addEventListener("click", () => {
+    shown += PAGE;
+    renderResults();
+  });
+  $("vq").addEventListener("input", renderCompare);
+  window.addEventListener("hashchange", () => {
+    readHash();
+    renderTabs();
+    update();
+  });
+}
+
+function update(key, value) {
+  if (key) state[key] = value;
+  shown = PAGE;
+  writeHash();
+  renderResults();
+}
+
+function renderAll() {
+  renderTabs();
+  renderResults();
+  renderOverview();
+  renderTop();
+  renderCompare();
+}
+
+function renderTabs() {
+  document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === state.tab));
+  document.querySelectorAll(".tab").forEach((s) => (s.hidden = s.id !== "tab-" + state.tab));
+}
+
+// ---------- Suche ----------
+function filtered() {
+  const words = norm(state.q).split(/\s+/).filter(Boolean);
+  return OFFERS.filter(
+    (o) =>
+      words.every((w) => o.hay.includes(w)) &&
+      (!state.kat || o.k === state.kat) &&
+      (state.plat === "" || o.p === Number(state.plat)) &&
+      (!state.kanal || o.ch.includes(state.kanal)) &&
+      (!state.neu || o.seit === DATA.stand)
+  );
+}
+
+function sortOffers(list) {
+  const byPct = (a, b) => (b.r ?? -1) - (a.r ?? -1) || a.p - b.p;
+  if (state.sort === "name") return list.sort((a, b) => a.a.localeCompare(b.a, "de") || byPct(a, b));
+  if (state.sort === "neu") return list.sort((a, b) => (b.seit || "").localeCompare(a.seit || "") || byPct(a, b));
+  return list.sort(byPct);
+}
+
+function renderResults() {
+  const list = sortOffers(filtered());
+  const best = Math.max(-1, ...list.map((o) => o.r ?? -1));
+
+  // Zusammenfassung je Plattform
+  const per = PLAT.map((_, i) => {
+    const l = list.filter((o) => o.p === i);
+    return { n: l.length, best: Math.max(-1, ...l.map((o) => o.r ?? -1)) };
+  });
+  $("summary").innerHTML =
+    per
+      .map(
+        (s, i) => `<div class="sum ${best > 0 && s.best === best ? "best" : ""}" style="--pc:var(--p${i})">
+        <div class="n">${esc(PLAT[i])} · ${s.n} Treffer</div>
+        <div class="v">${s.best > 0 ? "bis " + s.best + " %" : "–"}</div></div>`
+      )
+      .join("") + `<p class="count" style="grid-column:1/-1">${list.length.toLocaleString("de-DE")} Treffer${best > 0 ? " · bester Rabatt grün markiert" : ""}</p>`;
+
+  $("results").innerHTML = list.length
+    ? list.slice(0, shown).map((o) => offerHtml(o, best > 0 && o.r === best)).join("")
+    : `<li class="empty">Keine Angebote gefunden. Weniger Wörter oder einen anderen Filter versuchen.</li>`;
+  $("more").hidden = list.length <= shown;
+  $("more").textContent = `Mehr anzeigen (${(list.length - shown).toLocaleString("de-DE")} weitere)`;
+}
+
+function offerHtml(o, isBest) {
+  const tags = [
+    `<span class="tag plat" style="--pc:var(--p${o.p})">${esc(PLAT[o.p])}</span>`,
+    `<span class="tag">${esc(o.k)}</span>`,
+    o.ch !== "online" ? `<span class="tag">${esc(o.ch)}</span>` : "",
+    o.seit && o.seit === DATA.stand ? `<span class="tag neu">neu</span>` : "",
+    o.h ? `<span>${esc(o.h)}</span>` : "",
+  ].join("");
+  return `<li class="offer ${isBest ? "best" : ""}">
+    <div class="pct ${o.r == null ? "none" : ""}">${o.r == null ? esc(o.ra) : o.r + "&nbsp;%"}</div>
+    <div class="title">${esc(o.a)} <span class="what">– ${esc(o.o)}</span></div>
+    <a class="go" href="${esc(o.l)}" target="_blank" rel="noopener noreferrer">Zum Angebot ↗</a>
+    <div class="tags">${tags}</div>
+    ${o.d ? `<p class="desc">${esc(o.d)}</p>` : ""}
+  </li>`;
+}
+
+// ---------- Übersicht ----------
+function bestOf(list) {
+  return list.reduce((m, o) => (o.r != null && (!m || o.r > m.r) ? o : m), null);
+}
+
+function renderOverview() {
+  const kats = [...new Set(OFFERS.map((o) => o.k))].sort((a, b) => a.localeCompare(b, "de"));
+  const head = `<tr><th>Kategorie</th>${PLAT.map((p) => `<th class="num">${esc(p)}</th>`).join("")}<th class="num">Gesamt</th><th>Bestes Angebot</th></tr>`;
+  const rows = kats.map((k) => {
+    const items = OFFERS.filter((o) => o.k === k);
+    const bests = PLAT.map((_, i) => bestOf(items.filter((o) => o.p === i)));
+    const top = bestOf(bests.filter(Boolean));
+    const cells = PLAT.map((_, i) => {
+      const n = items.filter((o) => o.p === i).length;
+      const b = bests[i];
+      if (!n) return `<td class="num dim">–</td>`;
+      const isTop = top && b && b.r === top.r;
+      return `<td class="num ${isTop ? "best" : ""}">${n}<br><small>${b ? "bis " + b.r + " %" : "ohne %"}</small></td>`;
+    });
+    return `<tr><td><button class="catlink" data-kat="${esc(k)}">${esc(k)}</button></td>${cells.join("")}
+      <td class="num">${items.length}</td>
+      <td>${top ? `${esc(top.a)} <span class="dim">(${esc(PLAT[top.p])})</span><br><small>${esc(top.o)}</small>` : ""}</td></tr>`;
+  });
+  const sum = `<tr class="sum-row"><td>Gesamt</td>${DATA.anzahl.map((n) => `<td class="num">${n}</td>`).join("")}<td class="num">${OFFERS.length}</td><td></td></tr>`;
+  $("ov").innerHTML = `<thead>${head}</thead><tbody>${rows.join("")}${sum}</tbody>`;
+  $("ov").querySelectorAll(".catlink").forEach((b) =>
+    b.addEventListener("click", () => {
+      Object.assign(state, { q: "", kat: b.dataset.kat, plat: "", kanal: "", neu: false, tab: "suche" });
+      syncInputs();
+      update();
+      renderTabs();
+      scrollTo(0, 0);
+    })
+  );
+}
+
+// ---------- Top-Angebote ----------
+function renderTop() {
+  const kats = [...new Set(OFFERS.map((o) => o.k))].sort((a, b) => a.localeCompare(b, "de"));
+  $("top").innerHTML = kats
+    .map((k) => {
+      const seen = new Set();
+      const top = OFFERS.filter((o) => o.k === k && o.r != null)
+        .sort((a, b) => b.r - a.r || a.p - b.p)
+        .filter((o) => {
+          const key = o.p + "|" + o.a.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 5);
+      if (!top.length) return "";
+      return `<div class="card"><h2>${esc(k)}</h2><ol>${top
+        .map(
+          (o, i) => `<li class="${i === 0 ? "first" : ""}"><a href="${esc(o.l)}" target="_blank" rel="noopener noreferrer">${esc(o.a)}</a>
+          – ${o.r} %<br><span class="small">${esc(PLAT[o.p])} · ${esc(o.o)}</span></li>`
+        )
+        .join("")}</ol></div>`;
+    })
+    .join("");
+}
+
+// ---------- Anbieter-Vergleich ----------
+let GROUPS = null;
+
+function renderCompare() {
+  if (!GROUPS) {
+    const g = new Map();
+    for (const o of OFFERS) if (o.b.length >= 2) (g.get(o.b) || g.set(o.b, []).get(o.b)).push(o);
+    GROUPS = [...g.values()]
+      .filter((l) => new Set(l.map((o) => o.p)).size >= 2)
+      .map((l) => ({ name: l.map((o) => o.a).sort((a, b) => a.length - b.length)[0], items: l }))
+      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+  }
+  const f = norm($("vq").value.trim());
+  const list = GROUPS.filter((g) => !f || norm(g.name).includes(f));
+  $("vhint").textContent = `${GROUPS.length} Anbieter gibt es auf mehreren Plattformen. Grün = Plattform mit dem höchsten Rabatt; „ohne %“ = Angebot vorhanden, aber ohne Prozentrabatt.`;
+  const head = `<tr><th>Anbieter</th>${PLAT.map((p) => `<th class="num">${esc(p)}</th>`).join("")}<th>Bestes Angebot</th></tr>`;
+  const rows = list.map((g) => {
+    const bests = PLAT.map((_, i) => bestOf(g.items.filter((o) => o.p === i)));
+    const top = bestOf(bests.filter(Boolean));
+    const cells = PLAT.map((_, i) => {
+      const has = g.items.some((o) => o.p === i);
+      const b = bests[i];
+      if (!has) return `<td class="num dim">–</td>`;
+      if (!b) return `<td class="num dim">ohne %</td>`;
+      return `<td class="num ${top && b.r === top.r ? "best" : ""}">${b.r} %</td>`;
+    });
+    return `<tr><td>${esc(g.name)}</td>${cells.join("")}<td>${
+      top ? `<a href="${esc(top.l)}" target="_blank" rel="noopener noreferrer">${esc(PLAT[top.p])}</a>: ${esc(top.o)}` : `<span class="dim">kein %-Rabatt</span>`
+    }</td></tr>`;
+  });
+  $("cmp").innerHTML = `<thead>${head}</thead><tbody>${rows.join("") || `<tr><td colspan="5" class="dim">Kein Anbieter gefunden.</td></tr>`}</tbody>`;
+}

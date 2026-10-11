@@ -1,0 +1,11 @@
+[Unit]
+Description=Rabatt-Finder wöchentlich aktualisieren
+
+[Timer]
+# Jeden Montag gegen 5 Uhr; verpasste Läufe werden nach dem Start nachgeholt
+OnCalendar=Mon *-*-* 05:00:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

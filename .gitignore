@@ -1,0 +1,16 @@
+# Zugangsdaten – niemals ins Repository
+.env
+
+# Ausgelesene Daten und erzeugte Dateien (entstehen auf dem Server)
+data/
+archiv/
+web/offers.json
+web/status.json
+web/*.xlsx
+*.xlsx
+
+# Python / lokale Werkzeuge
+.venv/
+__pycache__/
+*.pyc
+.claude/

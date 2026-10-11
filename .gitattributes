@@ -1,0 +1,3 @@
+# Skripte und Konfiguration laufen auf Linux – immer mit LF-Zeilenenden speichern
+* text=auto eol=lf
+*.xlsx binary
