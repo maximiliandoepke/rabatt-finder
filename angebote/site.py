@@ -1,23 +1,14 @@
 """Schreibt die Daten für die Website (offers.json) inkl. Vergleich mit dem vorherigen Stand."""
 import hashlib
 import json
-import re
 from pathlib import Path
 
-from .parse import PLAT_KURZ, PLATTS
+from .parse import PLAT_KURZ, PLATTS, brand_key
 
 
 def offer_id(row):
     key = f'{row["Plattform"]}|{row["Anbieter"].lower()}|{row["Angebot"].lower()}'
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
-
-
-def brand_key(name):
-    s = name.lower()
-    s = re.sub(r"[®™©’'`´]", "", s)
-    s = re.sub(r"\b(geschenkgutscheine?|gutscheine?|gift ?cards?|online ?shop|deutschland|germany|international|"
-               r"store|shop|de)\b", "", s)
-    return re.sub(r"[^a-z0-9äöüß]+", "", s)
 
 
 def write_site_data(rows, out, stand):

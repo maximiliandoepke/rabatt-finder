@@ -148,12 +148,41 @@ def rabatt_art(text, pct):
 
 rows = []  # wird von load_offers() befüllt
 
+# Suchbegriffe je Marke (Produkte, Leistungen, Synonyme) – von Hand gepflegt, Schlüssel siehe brand_key()
+BRAND_KEYWORDS = json.loads((Path(__file__).with_name("marken_schlagworte.json")).read_text(encoding="utf-8"))
+
+
+def brand_key(name):
+    s = name.lower()
+    s = re.sub(r"[®™©’'`´]", "", s)
+    s = re.sub(r"(geschenkgutscheine?|gutscheine?|gift ?cards?|online ?shop|deutschland|germany|international|"
+               r"store|shop|de)", "", s)
+    return re.sub(r"[^a-z0-9äöüß]+", "", s)
+
+
+def brand_and_rule_keywords(anbieter, rule_keywords):
+    """Gepflegte Marken-Schlagworte haben Vorrang. Die groben Regel-Schlagworte (aus Kategorie/Unterkategorie)
+    dienen nur als Rückfall für neue Marken – sonst findet z. B. "Staubsauger" auch Leifheit oder "Kleidung"
+    auch Fielmann, weil deren Unterkategorie bzw. Kategorie so heißt."""
+    return BRAND_KEYWORDS.get(brand_key(anbieter)) or rule_keywords
+
+
+def merge_keywords(*lists):
+    seen, out = set(), []
+    for part in lists:
+        for k in (part or "").split(", "):
+            if k and k.lower() not in seen:
+                seen.add(k.lower())
+                out.append(k)
+    return ", ".join(out)
+
 
 def add(plattform, anbieter, angebot, kat, pct, unterkat, beschreibung, hinweis, schlagworte, kanal, link):
     rows.append({"Plattform": plattform, "Anbieter": anbieter, "Angebot": angebot, "Kategorie": kat,
                  "Max. Rabatt": pct, "Rabatt-Art": rabatt_art(angebot, pct), "Kanal": kanal,
                  "Unterkategorie": unterkat, "Beschreibung": beschreibung, "Hinweis": hinweis,
-                 "Schlagworte": schlagworte, "Link": link})
+                 "Schlagworte": brand_and_rule_keywords(anbieter, schlagworte),
+                 "Link": link})
 
 
 def _parse_cb(src):
