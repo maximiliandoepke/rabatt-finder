@@ -72,18 +72,26 @@ def click_until_done(page, root_selector, button_text, item_selector, max_clicks
 
 
 # ---------------- Corporate Benefits ----------------
+# Hauptkategorien (Stand 10/2026) – nur Rückfall, falls das Menü nicht gefunden wird
+CB_FALLBACK_CATS = {"21": "Auto", "22": "Finanzen", "23": "Reisen", "35": "Mode", "36": "Freizeit", "1740": "Sport",
+                    "42": "Tickets", "37": "Wohnen", "4428": "Food", "38": "Technik", "40": "Mobilfunk",
+                    "5675": "Beauty & Gesundheit", "41": "Regionales"}
+
 CB_EXTRACT_JS = """
-async () => {
+async (fallback) => {
   const T = e => e ? e.textContent.replace(/\\s+/g, ' ').trim() : '';
-  const cats = {};
+  let cats = {};
   document.querySelectorAll('a[href^="/overview/"]').forEach(a => {
     const h = a.getAttribute('href');
     const t = a.textContent.trim();
     if (!h.includes('#') && t.startsWith('Alle Angebote')) cats[h.split('/')[2]] = t.replace('Alle Angebote', '').trim();
   });
+  const menuFound = Object.keys(cats).length;
+  if (!menuFound) cats = fallback;
   const out = {}, stats = {};
   for (const [id, name] of Object.entries(cats)) {
     const r = await fetch('/overview/' + id, {credentials: 'include'});
+    if (r.url.includes('/login')) { stats[name] = 'Login verlangt'; continue; }
     const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
     let sub = '', n = 0;
     doc.querySelectorAll('main h2, main .cbg3-list-item').forEach(el => {
@@ -101,7 +109,7 @@ async () => {
     });
     stats[name] = r.status + ':' + n;
   }
-  return {offers: Object.values(out), stats};
+  return {offers: Object.values(out), stats, menuFound};
 }
 """
 
@@ -122,13 +130,23 @@ def scrape_cb(ctx):
         page.click("#cbg3-submit-login")
         page.wait_for_load_state("domcontentloaded", timeout=60000)
         page.wait_for_timeout(4000)
+        log(f"Corporate Benefits: nach dem Absenden auf {page.url.split('?')[0]}")
         if "/login" in page.url:
             raise RuntimeError("Anmeldung bei Corporate Benefits fehlgeschlagen (Zugangsdaten prüfen oder "
                                "zusätzliche Bestätigung erforderlich)")
     page.goto(base + "/", wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(2000)
-    result = page.evaluate(CB_EXTRACT_JS)
-    log(f"Corporate Benefits: {len(result['offers'])} Angebote {result['stats']}")
+    page.wait_for_timeout(3000)
+    dismiss_cookies(page)
+    log(f"Corporate Benefits: nach Anmeldung auf {page.url.split('?')[0]} – Titel „{page.title()}“, "
+        f"{page.locator('a[href^=\"/overview/\"]').count()} Kategorie-Links")
+    result = page.evaluate(CB_EXTRACT_JS, CB_FALLBACK_CATS)
+    log(f"Corporate Benefits: {len(result['offers'])} Angebote, Menü-Kategorien: {result['menuFound']}, "
+        f"je Kategorie: {result['stats']}")
+    if not result["offers"]:
+        text = page.evaluate("() => (document.querySelector('main') || document.body).innerText.slice(0, 400)")
+        log("Corporate Benefits: Seitentext zur Diagnose: " + " ".join(text.split()))
+        page.close()
+        raise RuntimeError("keine Angebote gefunden (Diagnose siehe Protokoll)")
     page.close()
     return result["offers"]
 
@@ -230,7 +248,7 @@ def main():
                 continue
             old_n = count(json.loads(target.read_text(encoding="utf-8"))) if target.exists() else 0
             new_n = count(data)
-            if old_n and new_n < old_n * MIN_SHARE:
+            if new_n == 0 or (old_n and new_n < old_n * MIN_SHARE):
                 msg = f"{key}: nur {new_n} statt bisher {old_n} Einträge – alte Daten werden behalten"
                 log("WARNUNG " + msg)
                 status["warnungen"].append(msg)
