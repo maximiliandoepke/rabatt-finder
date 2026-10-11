@@ -14,7 +14,7 @@ Anbieter-Vergleich und Excel-Download. Erreichbar unter `/angebote/`, geschützt
 | `angebote/excel.py` | erzeugt `Angebote_Uebersicht.xlsx` |
 | `build.py` | `python build.py <rohdaten> <zielordner>` – baut Website-Daten und Excel |
 | `web/` | die statische Website (`index.html`, `app.js`, `style.css`) |
-| `deploy/` | Update-Skript, systemd-Timer, nginx-Konfiguration, Vorlage für `.env` |
+| `deploy/` | Update-Skript, systemd-Timer, Caddy-Konfiguration für `/angebote/`, Vorlage für `.env` |
 
 ## Ablauf auf dem Server
 
