@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -139,11 +140,26 @@ def scrape_cb(ctx):
     page.wait_for_timeout(2000)
     dismiss_cookies(page)
     cats = page.evaluate(CB_CATS_JS) or CB_FALLBACK_CATS
+    try:
+        with urllib.request.urlopen("https://ipinfo.io/json", timeout=10) as r:
+            j = json.load(r)
+        geo = f"{j.get('country')} / {j.get('city')} / {j.get('org')}"
+    except Exception:
+        geo = "unbekannt"
+    log(f"Corporate Benefits: {len(cats)} Kategorien, Server-Standort laut IP: {geo}")
 
     out, stats = {}, {}
     for cid, name in cats.items():
         # Seite richtig öffnen: die Angebotsliste wird per JavaScript nachgeladen
-        page.goto(f"{base}/overview/{cid}", wait_until="domcontentloaded", timeout=60000)
+        url = f"{base}/overview/{cid}"
+        resp = page.goto(url, wait_until="domcontentloaded", timeout=60000, referer=base + "/")
+        if not page.url.split("?")[0].split("#")[0].endswith(f"/overview/{cid}"):
+            chain, req = [], resp.request if resp else None
+            while req:
+                chain.append(req.url.split("?")[0])
+                req = req.redirected_from
+            stats[name] = f"umgeleitet auf {page.url.split('?')[0]} (Kette: {' <- '.join(chain)})"
+            continue
         if "/login" in page.url:
             stats[name] = "Login verlangt"
             continue
