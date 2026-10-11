@@ -267,11 +267,18 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
+    keys = args.only.split(",")
+    status_file = out / "status.json"
     status = {"lauf": datetime.now().isoformat(timespec="minutes"), "plattformen": {}, "warnungen": []}
+    old = json.loads(status_file.read_text(encoding="utf-8")) if status_file.exists() else {}
+    prev = old.get("plattformen", {})
+    if old:  # Einträge anderer Plattformen (z. B. Corporate Benefits per Lesezeichen) behalten
+        status["plattformen"] = {k: v for k, v in old.get("plattformen", {}).items() if k not in keys}
+        status["warnungen"] = [w for w in old.get("warnungen", []) if w.split(":")[0] not in keys]
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not args.headed)
         ctx = browser.new_context(locale="de-DE", user_agent=UA, viewport={"width": 1366, "height": 900})
-        for key in args.only.split(","):
+        for key in keys:
             target = out / FILES[key]
             t0 = time.time()
             try:
@@ -280,7 +287,7 @@ def main():
                 msg = f"{key}: {e}"
                 log("FEHLER " + msg)
                 status["warnungen"].append(msg)
-                status["plattformen"][key] = {"ok": False}
+                status["plattformen"][key] = {"ok": False, "stand": prev.get(key, {}).get("stand")}
                 continue
             old_n = count(json.loads(target.read_text(encoding="utf-8"))) if target.exists() else 0
             new_n = count(data)
@@ -288,12 +295,13 @@ def main():
                 msg = f"{key}: nur {new_n} statt bisher {old_n} Einträge – alte Daten werden behalten"
                 log("WARNUNG " + msg)
                 status["warnungen"].append(msg)
-                status["plattformen"][key] = {"ok": False, "anzahl": new_n}
+                status["plattformen"][key] = {"ok": False, "anzahl": new_n, "stand": prev.get(key, {}).get("stand")}
                 continue
             target.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            status["plattformen"][key] = {"ok": True, "anzahl": new_n, "sekunden": round(time.time() - t0)}
+            status["plattformen"][key] = {"ok": True, "anzahl": new_n, "sekunden": round(time.time() - t0),
+                                         "stand": datetime.now().strftime("%d.%m.%Y")}
         browser.close()
-    (out / "status.json").write_text(json.dumps(status, ensure_ascii=False, indent=1), encoding="utf-8")
+    status_file.write_text(json.dumps(status, ensure_ascii=False, indent=1), encoding="utf-8")
     log(f"Fertig: {status}")
     return 0 if not status["warnungen"] else 1
 

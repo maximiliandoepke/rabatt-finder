@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Corporate Benefits einspielen</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="wrap" style="padding-top:24px">
+    <h1 style="font-size:20px;margin:0 0 12px">Corporate Benefits einspielen</h1>
+    <p id="msg" class="hint" style="font-size:15px">Warte auf die Daten von Corporate Benefits …</p>
+    <p id="done" hidden><a href="./">Zum Rabatt-Finder</a></p>
+  </main>
+  <script>
+    "use strict";
+    const ALLOWED = /^https:\/\/([a-z0-9-]+\.)*mitarbeiterangebote\.de$/;
+    const msg = document.getElementById("msg");
+    let received = false;
+
+    // Dem Lesezeichen-Knopf melden, dass dieses Fenster bereit ist (wiederholt, bis Daten kommen)
+    const ping = setInterval(() => {
+      if (received || !window.opener) return;
+      window.opener.postMessage("rf-ready", "*");
+    }, 500);
+    if (!window.opener) msg.textContent = "Dieses Fenster wird vom Lesezeichen-Knopf geöffnet. Anleitung: lesezeichen.html";
+
+    window.addEventListener("message", async (e) => {
+      if (!ALLOWED.test(e.origin) || !e.data || typeof e.data !== "object") return;
+      if (e.data.type === "rf-progress") {
+        msg.textContent = `Lese Corporate Benefits aus … (${e.data.text})`;
+        return;
+      }
+      if (e.data.type !== "rf-cb" || received) return;
+      received = true;
+      clearInterval(ping);
+      const n = Array.isArray(e.data.offers) ? e.data.offers.length : 0;
+      msg.textContent = `${n.toLocaleString("de-DE")} Angebote aus ${e.data.kategorien} Kategorien erhalten – lade hoch und baue die Website neu …`;
+      try {
+        const r = await fetch("api/cb-upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ offers: e.data.offers }),
+        });
+        const res = await r.json();
+        msg.textContent = res.ok
+          ? `Fertig: ${res.anzahl.toLocaleString("de-DE")} Corporate-Benefits-Angebote eingespielt` + (res.vorher ? ` (vorher ${res.vorher.toLocaleString("de-DE")}).` : ".")
+          : `Fehler: ${res.fehler}`;
+      } catch {
+        msg.textContent = "Fehler: Der Server hat nicht geantwortet. Bitte später erneut versuchen.";
+      }
+      document.getElementById("done").hidden = false;
+    });
+  </script>
+</body>
+</html>

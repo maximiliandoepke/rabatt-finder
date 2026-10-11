@@ -1,0 +1,16 @@
+[Unit]
+Description=Rabatt-Finder: Empfang der Corporate-Benefits-Daten (Lesezeichen-Knopf)
+After=network.target
+
+[Service]
+User=rabatt
+Group=rabatt
+WorkingDirectory=/opt/rabatt-finder
+EnvironmentFile=/opt/rabatt-finder/.env
+ExecStart=/opt/rabatt-finder/.venv/bin/python server/upload.py
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

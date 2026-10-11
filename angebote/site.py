@@ -31,13 +31,21 @@ def write_site_data(rows, out, stand):
     else:
         first_seen_old = {}
 
+    # Plattformen, die im vorherigen Stand schon Angebote hatten – beim ersten Einspielen ist nichts „neu“
+    known_platforms = {o["p"] for o in previous.values()}
+
     offers = []
     for row in rows:
         oid = offer_id(row)
         pct = row["Max. Rabatt"]
+        platform = PLATTS.index(row["Plattform"])
+        if oid in previous:
+            seit = first_seen_old[oid]
+        else:
+            seit = stand if platform in known_platforms else None
         offers.append({
             "id": oid,
-            "p": PLATTS.index(row["Plattform"]),
+            "p": platform,
             "a": row["Anbieter"],
             "o": row["Angebot"],
             "k": row["Kategorie"],
@@ -50,12 +58,12 @@ def write_site_data(rows, out, stand):
             "s": row["Schlagworte"],
             "l": row["Link"],
             "b": brand_key(row["Anbieter"]),
-            # Datum, seit dem das Angebot in den Daten ist; beim ersten Lauf leer
-            "seit": first_seen_old[oid] if oid in previous else (stand if previous else None),
+            # Datum, seit dem das Angebot in den Daten ist; leer, wenn es schon beim ersten Einspielen dabei war
+            "seit": seit,
         })
     ids = {o["id"] for o in offers}
     removed = [{"p": o["p"], "a": o["a"], "o": o["o"]} for oid, o in previous.items() if oid not in ids]
-    new_count = sum(1 for o in offers if previous and o["id"] not in previous)
+    new_count = sum(1 for o in offers if o["seit"] == stand and o["id"] not in previous)
 
     data = {
         "stand": stand,

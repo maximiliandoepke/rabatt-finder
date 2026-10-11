@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Lesezeichen-Knopf einrichten</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .bm { display: inline-block; padding: 10px 16px; border-radius: 8px; background: var(--accent); color: #fff;
+      font-weight: 700; text-decoration: none; cursor: grab; }
+    @media (prefers-color-scheme: dark) { .bm { color: #12161c; } }
+    ol.steps { display: grid; gap: 10px; padding-left: 20px; }
+    .card p { margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <main class="wrap" style="padding-top:24px;max-width:720px">
+    <p><a href="./">← Zum Rabatt-Finder</a></p>
+    <h1 style="font-size:22px">Corporate Benefits einspielen</h1>
+    <p>Corporate Benefits lässt sich nicht automatisch vom Server auslesen. Mit diesem Lesezeichen-Knopf liest dein
+      eigener Browser die Angebote aus – mit deinem Login, auf deinen Klick – und schickt sie an den Rabatt-Finder.</p>
+
+    <div class="card" style="margin:16px 0">
+      <p><strong>1. Knopf in die Lesezeichenleiste ziehen</strong></p>
+      <p><a id="bm" class="bm" href="#" onclick="return false">Rabatt-Finder aktualisieren</a></p>
+      <p class="hint">Mit der Maus auf die Lesezeichenleiste ziehen (in Chrome einblenden mit Strg+Umschalt+B).
+        Nicht anklicken – hier auf dieser Seite macht er nichts.</p>
+    </div>
+
+    <div class="card">
+      <p><strong>2. Einmal pro Woche verwenden</strong></p>
+      <ol class="steps">
+        <li>Corporate Benefits öffnen und einloggen (Startseite reicht).</li>
+        <li>Auf das Lesezeichen „Rabatt-Finder aktualisieren“ klicken.</li>
+        <li>Es öffnet sich ein kleines Fenster des Rabatt-Finders (ggf. mit Login). Nach etwa 30 Sekunden steht dort
+          „Fertig: … Angebote eingespielt“ – das Fenster kann dann geschlossen werden.</li>
+      </ol>
+      <p class="hint">Falls Chrome das Fenster blockiert: in der Adresszeile auf das Pop-up-Symbol klicken und Pop-ups
+        für Corporate Benefits erlauben.</p>
+    </div>
+  </main>
+  <script>
+    "use strict";
+    fetch("bookmarklet.js", { cache: "no-cache" })
+      .then((r) => r.text())
+      .then((code) => {
+        code = code.replace("__ORIGIN__", location.origin);
+        document.getElementById("bm").href = "javascript:" + encodeURIComponent(code);
+      });
+  </script>
+</body>
+</html>

@@ -31,26 +31,31 @@ sudo -u rabatt .venv/bin/pip install -r requirements.txt
 sudo -u rabatt .venv/bin/playwright install chromium
 ```
 
-## 3. Zugangsdaten eintragen
+## 3. Einstellungen
 
 ```bash
-cd /opt/rabatt-finder
-sudo -u rabatt cp deploy/env.example .env
-chmod 600 .env
-nano .env
+cd /opt/rabatt-finder && sudo -u rabatt cp deploy/env.example .env && chmod 600 .env
 ```
 
-`CB_EMAIL` und `CB_PASSWORD` ausfüllen, speichern mit Strg+O, Enter, Strg+X.
+Zugangsdaten werden nicht benötigt (siehe Kommentar in der Datei).
 
-## 4. Erster Lauf
+## 4. Erster Lauf (Student Beans und UNiDAYS)
 
 ```bash
 cd /opt/rabatt-finder && sudo -u rabatt deploy/update.sh
 ```
 
-Dauert ca. 10 Minuten. Am Ende steht `Fertig: {...}` mit der Anzahl je Plattform.
+Dauert ca. 7 Minuten. Am Ende steht `Fertig: {...}` mit der Anzahl je Plattform.
 
-## 5. Caddy: Unterseite /angebote/ mit Passwort
+## 5. Empfangsstelle für den Lesezeichen-Knopf
+
+```bash
+cp /opt/rabatt-finder/deploy/rabatt-finder-upload.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now rabatt-finder-upload.service
+systemctl status rabatt-finder-upload.service --no-pager
+```
+
+## 6. Caddy: Unterseite /angebote/ mit Passwort
 
 Passwort-Hash erzeugen (Caddy fragt das Passwort zweimal ab):
 
@@ -88,7 +93,7 @@ Zurück zum alten Stand, falls etwas nicht stimmt:
 cp /etc/caddy/Caddyfile.vor-angebote /etc/caddy/Caddyfile && systemctl reload caddy
 ```
 
-## 6. Wöchentliches Update einschalten
+## 7. Wöchentliches Update einschalten
 
 ```bash
 cp /opt/rabatt-finder/deploy/rabatt-finder.service /opt/rabatt-finder/deploy/rabatt-finder.timer /etc/systemd/system/
@@ -96,10 +101,16 @@ systemctl daemon-reload && systemctl enable --now rabatt-finder.timer
 systemctl list-timers rabatt-finder.timer
 ```
 
+## 8. Corporate Benefits einspielen
+
+`https://srv2025840.hstgr.cloud/angebote/lesezeichen.html` öffnen, den Knopf in die Lesezeichenleiste ziehen und
+der Anleitung auf der Seite folgen. Danach einmal pro Woche (oder bei Bedarf) auf Corporate Benefits den Knopf
+klicken; die Website erinnert nach 14 Tagen.
+
 ## Später: neue Version holen
 
 ```bash
-cd /opt/rabatt-finder && sudo -u rabatt git pull
+cd /opt/rabatt-finder && sudo -u rabatt git pull && sudo -u rabatt deploy/publish.sh && systemctl restart rabatt-finder-upload.service
 ```
 
 Wenn sich `deploy/caddy-angebote.conf` oder die systemd-Dateien geändert haben, die Kopien in `/etc/caddy/` bzw.

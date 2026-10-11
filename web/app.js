@@ -4,7 +4,16 @@ const PAGE = 50;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const norm = (s) => String(s ?? "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss");
-const pctText = (r) => (r == null ? "" : r + " %");
+const NEW_DAYS = 7; // so lange gilt ein Angebot nach dem ersten Auftauchen als „neu“
+const toDate = (s) => {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s || "");
+  return m ? new Date(+m[3], m[2] - 1, +m[1]) : null;
+};
+const daysSince = (s) => {
+  const d = toDate(s);
+  return d ? Math.floor((Date.now() - d) / 864e5) : Infinity;
+};
+const isNew = (o) => daysSince(o.seit) <= NEW_DAYS;
 
 let DATA = null;
 let OFFERS = [];
@@ -31,9 +40,10 @@ function init(data) {
 
   const total = OFFERS.length.toLocaleString("de-DE");
   const parts = PLAT.map((p, i) => `${p} ${data.anzahl[i].toLocaleString("de-DE")}`).join(" · ");
-  $("meta").textContent = `Stand ${data.stand} · ${total} Angebote · ${parts}` + (data.neu ? ` · ${data.neu} neu` : "");
+  const neu = OFFERS.filter(isNew).length;
+  $("meta").textContent = `Stand ${data.stand} · ${total} Angebote · ${parts}` + (neu ? ` · ${neu} neu` : "");
   $("foot").textContent = data.entfallen.length ? `${data.entfallen.length} Angebote seit dem letzten Update entfallen.` : "";
-  $("neu-wrap").hidden = !data.neu;
+  $("neu-wrap").hidden = !neu;
 
   const kats = [...new Set(OFFERS.map((o) => o.k))].sort((a, b) => a.localeCompare(b, "de"));
   $("kat").insertAdjacentHTML("beforeend", kats.map((k) => `<option>${esc(k)}</option>`).join(""));
@@ -46,14 +56,29 @@ function init(data) {
 }
 
 // Hinweis, falls das letzte automatische Update nicht vollständig war
+const CB_REMIND_DAYS = 14;
+
 function showStatus() {
   fetch("status.json", { cache: "no-cache" })
     .then((r) => (r.ok ? r.json() : null))
     .then((s) => {
-      if (!s || !s.warnungen || !s.warnungen.length) return;
       const names = { cb: "Corporate Benefits", sb: "Student Beans", ud: "UNiDAYS" };
-      const failed = Object.entries(s.plattformen || {}).filter(([, v]) => !v.ok).map(([k]) => names[k] || k);
-      $("status").textContent = `Hinweis: Beim letzten Update (${s.lauf.replace("T", " ")}) konnte ${failed.join(", ") || "eine Plattform"} nicht aktualisiert werden – dort werden die Angebote vom vorherigen Stand angezeigt.`;
+      const pl = (s && s.plattformen) || {};
+      const notes = [];
+      const failed = Object.entries(pl).filter(([k, v]) => k !== "cb" && !v.ok).map(([k]) => names[k] || k);
+      if (failed.length) {
+        notes.push(`Beim letzten automatischen Update konnte ${esc(failed.join(", "))} nicht aktualisiert werden – dort werden die Angebote vom vorherigen Stand angezeigt.`);
+      }
+      const cb = pl.cb && pl.cb.ok ? pl.cb.stand : null;
+      if (!cb) {
+        notes.push(`Corporate Benefits wurde noch nicht eingespielt. <a href="lesezeichen.html">So geht's</a>`);
+      } else if (daysSince(cb) > CB_REMIND_DAYS) {
+        notes.push(`Corporate Benefits ist vom ${esc(cb)}. <a href="lesezeichen.html">Jetzt aktualisieren</a>`);
+      }
+      const stands = Object.entries(pl).filter(([, v]) => v.stand).map(([k, v]) => `${names[k] || k}: ${v.stand}`);
+      if (stands.length) $("foot").textContent = [`Datenstand – ${stands.join(", ")}`, $("foot").textContent].filter(Boolean).join(" · ");
+      if (!notes.length) return;
+      $("status").innerHTML = notes.join("<br>");
       $("status").hidden = false;
     })
     .catch(() => {});
@@ -144,14 +169,14 @@ function filtered() {
       (!state.kat || o.k === state.kat) &&
       (state.plat === "" || o.p === Number(state.plat)) &&
       (!state.kanal || o.ch.includes(state.kanal)) &&
-      (!state.neu || o.seit === DATA.stand)
+      (!state.neu || isNew(o))
   );
 }
 
 function sortOffers(list) {
   const byPct = (a, b) => (b.r ?? -1) - (a.r ?? -1) || a.p - b.p;
   if (state.sort === "name") return list.sort((a, b) => a.a.localeCompare(b.a, "de") || byPct(a, b));
-  if (state.sort === "neu") return list.sort((a, b) => (b.seit || "").localeCompare(a.seit || "") || byPct(a, b));
+  if (state.sort === "neu") return list.sort((a, b) => (toDate(b.seit) || 0) - (toDate(a.seit) || 0) || byPct(a, b));
   return list.sort(byPct);
 }
 
@@ -185,7 +210,7 @@ function offerHtml(o, isBest) {
     `<span class="tag plat" style="--pc:var(--p${o.p})">${esc(PLAT[o.p])}</span>`,
     `<span class="tag">${esc(o.k)}</span>`,
     o.ch !== "online" ? `<span class="tag">${esc(o.ch)}</span>` : "",
-    o.seit && o.seit === DATA.stand ? `<span class="tag neu">neu</span>` : "",
+    isNew(o) ? `<span class="tag neu">neu</span>` : "",
     o.h ? `<span>${esc(o.h)}</span>` : "",
   ].join("");
   return `<li class="offer ${isBest ? "best" : ""}">
