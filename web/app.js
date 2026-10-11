@@ -16,11 +16,13 @@ const daysSince = (s) => {
 const isNew = (o) => daysSince(o.seit) <= NEW_DAYS;
 
 let DATA = null;
+const VOCAB = new Set(); // alle Wörter aus den Angeboten – für die Tippfehler-Toleranz
+const WEIGHTS = [10, 6, 4, 3, 1];
 let OFFERS = [];
 let PLAT = [];
 let shown = PAGE;
 
-const state = { tab: "suche", q: "", kat: "", plat: "", kanal: "", sort: "rabatt", neu: false };
+const state = { tab: "suche", q: "", kat: "", plat: "", kanal: "", sort: "relevanz", neu: false };
 
 // ---------- Laden ----------
 fetch("offers.json", { cache: "no-cache" })
@@ -36,7 +38,12 @@ fetch("offers.json", { cache: "no-cache" })
 function init(data) {
   DATA = data;
   PLAT = data.plattformen;
-  OFFERS = data.offers.map((o) => ({ ...o, hay: norm([o.a, o.o, o.k, o.u, o.d, o.h, o.s].join(" ")) }));
+  OFFERS = data.offers.map((o) => ({
+    ...o,
+    // Suchfelder mit Gewichtung: Anbieter > Angebot > Schlagworte > Kategorie > Beschreibung/Hinweis
+    f: [norm(o.a), norm(o.o), norm(o.s), norm(o.k + " " + o.u), norm(o.d + " " + o.h)],
+  }));
+  OFFERS.forEach((o) => o.f.join(" ").split(/[^a-z0-9]+/).forEach((t) => t.length >= 4 && VOCAB.add(t)));
 
   const total = OFFERS.length.toLocaleString("de-DE");
   const parts = PLAT.map((p, i) => `${p} ${data.anzahl[i].toLocaleString("de-DE")}`).join(" · ");
@@ -103,7 +110,7 @@ function syncInputs() {
 function writeHash() {
   const h = new URLSearchParams();
   for (const [k, v] of Object.entries(state)) {
-    if (k === "tab" ? v !== "suche" : k === "sort" ? v !== "rabatt" : v) h.set(k, v === true ? "1" : v);
+    if (k === "tab" ? v !== "suche" : k === "sort" ? v !== "relevanz" : v) h.set(k, v === true ? "1" : v);
   }
   history.replaceState(null, "", h.toString() ? "#" + h : location.pathname);
 }
@@ -124,7 +131,7 @@ function bind() {
   for (const id of ["kat", "plat", "kanal", "sort"]) $(id).addEventListener("change", () => update(id, $(id).value));
   $("nurneu").addEventListener("change", () => update("neu", $("nurneu").checked));
   $("reset").addEventListener("click", () => {
-    Object.assign(state, { q: "", kat: "", plat: "", kanal: "", sort: "rabatt", neu: false });
+    Object.assign(state, { q: "", kat: "", plat: "", kanal: "", sort: "relevanz", neu: false });
     syncInputs();
     update();
   });
@@ -161,23 +168,108 @@ function renderTabs() {
 }
 
 // ---------- Suche ----------
+// Einfache deutsche Wortstamm-Bildung: "schuhe" -> "schuh", "fernseher" -> "fernseh"
+function stem(w) {
+  if (w.length <= 4) return w;
+  const s = w.replace(/(ern|en|er|es|e|n|s)$/, "");
+  return s.length >= 4 ? s : w;
+}
+
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      rowMin = Math.min(rowMin, cur[j]);
+    }
+    if (rowMin > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+// Je Suchwort: das Wort selbst (zählt voll), dazu Varianten (Wortstamm oder bei Tippfehlern ähnliche Wörter)
+const variantCache = new Map();
+const existsAnywhere = (s) => OFFERS.some((o) => o.f.some((f) => f.includes(s)));
+
+function variants(word) {
+  if (variantCache.has(word)) return variantCache.get(word);
+  let result;
+  const st = stem(word);
+  if (existsAnywhere(st)) {
+    result = { full: word, alts: [st] };
+  } else {
+    // Tippfehler: ähnlichste Wörter aus den Angeboten (ganzes Wort oder Wortanfang)
+    const max = word.length >= 7 ? 2 : 1;
+    let bestD = max + 1;
+    let cands = [];
+    for (const t of VOCAB) {
+      const d = Math.min(editDistance(word, t, max), editDistance(word, t.slice(0, word.length), max) + 0.5);
+      if (d < bestD) {
+        bestD = d;
+        cands = [t];
+      } else if (d === bestD) cands.push(t);
+    }
+    result = { full: null, alts: bestD <= max ? cands.slice(0, 8) : [st] };
+  }
+  variantCache.set(word, result);
+  return result;
+}
+
+function scoreOffer(o, groups) {
+  let total = 0, matched = 0;
+  for (const g of groups) {
+    let best = 0;
+    o.f.forEach((field, i) => {
+      if (g.full && field.includes(g.full)) best = Math.max(best, WEIGHTS[i]);
+      else if (g.alts.some((v) => field.includes(v))) best = Math.max(best, WEIGHTS[i] * 0.6);
+    });
+    if (best) {
+      matched++;
+      total += best;
+    }
+  }
+  return { total, matched };
+}
+
+let fallbackUsed = false;
+
 function filtered() {
-  const words = norm(state.q).split(/\s+/).filter(Boolean);
-  return OFFERS.filter(
+  fallbackUsed = false;
+  const base = OFFERS.filter(
     (o) =>
-      words.every((w) => o.hay.includes(w)) &&
       (!state.kat || o.k === state.kat) &&
       (state.plat === "" || o.p === Number(state.plat)) &&
       (!state.kanal || o.ch.includes(state.kanal)) &&
       (!state.neu || isNew(o))
   );
+  const words = [...new Set(norm(state.q).split(/[^a-z0-9]+/).filter((w) => w.length >= 2))];
+  if (!words.length) {
+    base.forEach((o) => (o._score = 0));
+    return base;
+  }
+  const groups = words.map(variants);
+  for (const o of base) {
+    const s = scoreOffer(o, groups);
+    o._score = s.total;
+    o._matched = s.matched;
+  }
+  const all = base.filter((o) => o._matched === groups.length);
+  if (all.length || groups.length === 1) return all;
+  // Keine Treffer mit allen Wörtern: Angebote zeigen, die möglichst viele der Wörter enthalten
+  fallbackUsed = true;
+  return base.filter((o) => o._matched > 0).map((o) => ((o._score += o._matched * 100), o));
 }
 
 function sortOffers(list) {
   const byPct = (a, b) => (b.r ?? -1) - (a.r ?? -1) || a.p - b.p;
   if (state.sort === "name") return list.sort((a, b) => a.a.localeCompare(b.a, "de") || byPct(a, b));
   if (state.sort === "neu") return list.sort((a, b) => (toDate(b.seit) || 0) - (toDate(a.seit) || 0) || byPct(a, b));
-  return list.sort(byPct);
+  if (state.sort === "rabatt") return list.sort(byPct);
+  return list.sort((a, b) => b._score - a._score || byPct(a, b)); // Relevanz, ohne Suchbegriff = nach Rabatt
 }
 
 function renderResults() {
@@ -196,7 +288,9 @@ function renderResults() {
         <div class="n">${esc(PLAT[i])} · ${s.n} Treffer</div>
         <div class="v">${s.best > 0 ? "bis " + s.best + " %" : "–"}</div></div>`
       )
-      .join("") + `<p class="count" style="grid-column:1/-1">${list.length.toLocaleString("de-DE")} Treffer${best > 0 ? " · bester Rabatt grün markiert" : ""}</p>`;
+      .join("") + `<p class="count" style="grid-column:1/-1">${
+        fallbackUsed ? "Kein Angebot enthält alle Suchwörter – hier die Angebote mit den meisten Übereinstimmungen. " : ""
+      }${list.length.toLocaleString("de-DE")} Treffer${best > 0 ? " · bester Rabatt grün markiert" : ""}</p>`;
 
   $("results").innerHTML = list.length
     ? list.slice(0, shown).map((o) => offerHtml(o, best > 0 && o.r === best)).join("")
