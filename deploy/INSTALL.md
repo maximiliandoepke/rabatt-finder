@@ -63,7 +63,7 @@ Passwort-Hash erzeugen (Caddy fragt das Passwort zweimal ab):
 caddy hash-password
 ```
 
-Zugangsdatei anlegen – `freunde` ist der Benutzername, `HASH` durch die Ausgabe von oben ersetzen:
+Zugangsdatei anlegen – `schnaps` ist der Benutzername, `HASH` durch die Ausgabe von oben ersetzen:
 
 ```bash
 nano /etc/caddy/rabatt-finder.auth
@@ -73,7 +73,7 @@ Inhalt:
 
 ```
 basicauth {
-	freunde HASH
+	schnaps HASH
 }
 ```
 
